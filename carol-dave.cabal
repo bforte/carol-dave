@@ -1,0 +1,24 @@
+name:                carol-dave
+version:             0.1.0.0
+synopsis:            Minimalist esolang based on Brain-Flak
+description:         Replaces the left stack and right stack by Carol's stack that behaves as usual and Dave's queue which interprets booleans differently, these get swapped with every nilad/monad
+homepage:            https://github.com/bforte/carol-dave#README.md
+license:             BSD3
+license-file:        LICENSE
+author:              BMO
+copyright:           2018 BMO
+category:            Language
+build-type:          Simple
+cabal-version:       >=1.10
+extra-source-files:  README.md
+
+executable carol-dave
+  hs-source-dirs:      src
+  main-is:             Main.hs
+  default-language:    Haskell2010
+  build-depends:       base >= 4.7 && < 5
+                     , mtl
+                     , microlens
+                     , microlens-mtl
+                     , microlens-th
+                     , parsec
