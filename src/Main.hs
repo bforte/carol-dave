@@ -18,8 +18,8 @@ type Prog = [Stmt]
 data Stmt = One       | Len         | Pop        | Swp          -- Nilads
           | Push Prog | Negate Prog | While Prog | Ignore Prog  -- Monads
 
-parseProg = parse (progP <* eof) "src" . dropWhileEnd (`notElem` brackets)
-  where
+parseProg = parse (progP <* eof) "src" . dropWhileEnd (`notElem` brackets) where
+
     progP = many $ choice [paren cs n m | (cs,n,m) <- funcs]
 
     funcs = [ ("()",One,Push)
@@ -38,7 +38,6 @@ parseProg = parse (progP <* eof) "src" . dropWhileEnd (`notElem` brackets)
     dropCs = void . many $ noneOf brackets
 
     brackets = "()[]{}<>"
-
 
 parseInput = parse (read <$> many1 digit <* eof) "input"
 
@@ -73,76 +72,77 @@ next Q = S
 
 data Env = E
   { _carol  :: [Integer]
-  , _dave    :: Queue
+  , _dave   :: Queue
   , _active :: SQ
   }
 
 makeLenses ''Env
 
-newtype CD a = CD { runCD :: State Env a }
-  deriving (Functor, Applicative, Monad, MonadState Env)
 
-eval stmt = eval' stmt <* (active %= next)
+run stack inputs prog = output $ execState (mapM eval prog) init where
+  init | stack = E inputs (Queue [] []) S
+       | otherwise = E [] (Queue inputs []) Q
 
-eval' One = pure 1
-eval' Len = use active >>= \case
-  Q -> size <$> use dave
-  S -> size <$> use carol
-eval' Pop = use active >>= \case
-  Q -> do
-    q <- use dave
-    let (a,q') = pop q
-    dave .= q'
-    pure a
-  S -> do
-    s <- use carol
-    let (a,s') = pop s
-    carol .= s'
-    pure a
-eval' Swp = 0 <$ (active %= next)
-eval' (Push stmts) = do
-  v <- sum <$> mapM eval stmts
-  use active >>= \case
-    Q -> dave %= push v
-    S -> carol %= push v
-  pure v
-eval' (Negate stmts) = negate . sum <$> mapM eval stmts
-eval' w@(While stmts) = use active >>= \case
-  Q -> peek <$> use dave >>= \case
-    v | v /= 0 -> pure 0
-      | otherwise -> (+) . sum <$> mapM eval stmts <*> eval' w
-  S -> peek <$> use carol >>= \case
-    v | v == 0 -> pure 0
-      | otherwise -> (+) . sum <$> mapM eval stmts <*> eval' w
-eval' (Ignore stmts) = 0 <$ mapM eval stmts
+  output env
+    | env ^. active == S = env ^. carol
+    | (Queue i o) <- env ^. dave = o ++ reverse i
 
-run inputs prog = execState (runCD $ mapM eval prog) (E inputs (Queue [] []) S)
 
-output env
-  | env ^. active == S = env ^. carol
-  | (Queue i o) <- env ^. dave = o ++ reverse i
+  eval stmt = eval' stmt <* (active %= next)
 
-ascii = putStr . map (chr . (`mod` 128) . fromIntegral)
+  eval' One = pure 1
+  eval' Len = use active >>= \case
+    Q -> size <$> use dave
+    S -> size <$> use carol
+  eval' Pop = use active >>= \case
+    Q -> do
+      q <- use dave
+      let (a,q') = pop q
+      dave .= q'
+      pure a
+    S -> do
+      s <- use carol
+      let (a,s') = pop s
+      carol .= s'
+      pure a
+  eval' Swp = 0 <$ (active %= next)
+  eval' (Push stmts) = do
+    v <- sum <$> mapM eval stmts
+    use active >>= \case
+      Q -> dave %= push v
+      S -> carol %= push v
+    pure v
+  eval' (Negate stmts) = negate . sum <$> mapM eval stmts
+  eval' w@(While stmts) = use active >>= \case
+    Q -> peek <$> use dave >>= \case
+      v | v /= 0 -> pure 0
+        | otherwise -> (+) . sum <$> mapM eval stmts <*> eval' w
+    S -> peek <$> use carol >>= \case
+      v | v == 0 -> pure 0
+        | otherwise -> (+) . sum <$> mapM eval stmts <*> eval' w
+  eval' (Ignore stmts) = 0 <$ mapM eval stmts
 
-data Flags = F Bool ([Integer] -> IO ())
 
-defaults = F False (putStrLn . unwords . map show)
+data Flags = F Bool Bool ([Integer] -> IO ())
 
-main :: IO ()
+defaults = F False True (putStrLn . unwords . map show)
+
+options =
+  [ Option "e" ["expression"] (NoArg $ \(F _ c p)-> F True c p) "evaluate expression"
+  , Option "a" ["ascii"] (NoArg $ \(F e c _)-> F e c ascii) "ascii mode"
+  , Option "d" ["dave"] (NoArg $ \(F e _ p)-> F e False p) "start with Dave's queue"
+  ] where ascii = putStr . map (chr . (`mod` 128) . fromIntegral)
+
+
 main = getOpt Permute options <$> getArgs >>= \case
-  (args,a:as,[]) -> let (F e p) = foldr ($) defaults args in
-                      go p as =<< if e then pure a else readFile a
+  (args,a:as,[]) -> let (F e c p) = foldr ($) defaults args in
+                      go c p as =<< if e then pure a else readFile a
   (_,[],_)       -> die "missing file/expression"
   (_,_,err)      -> die $ concat err
 
-  where usage = " usage: carol-dave (-e expr | file) [-a] INPUTS"
+  where usage = " usage: carol-dave (-e expr | file) [-a] [-d] INPUTS"
 
-        go prnt as src = either (ioError . userError . show) (prnt . output) $
-          run <$> mapM parseInput as <*> parseProg src
+        go c prnt as src = either (ioError . userError . show) prnt $
+          run c <$> mapM parseInput as <*> parseProg src
 
         die m = ioError . userError $ m ++ "\n" ++ usageInfo usage options
-
-options =
-  [ Option "e" ["expression"] (NoArg $ \(F _ p)-> F True p) "evaluate expression"
-  , Option "a" ["ascii"] (NoArg $ \(F e _)-> F e ascii) "ascii mode"
-  ]
