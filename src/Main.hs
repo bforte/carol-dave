@@ -133,7 +133,7 @@ options =
   ] where ascii = putStr . map (chr . (`mod` 128) . fromIntegral)
 
 
-main = getOpt Permute options <$> getArgs >>= \case
+main = getOpt Permute options . map (map toLower) <$> getArgs >>= \case
   (args,a:as,[]) -> let (F e c p) = foldr ($) defaults args in
                       go c p as =<< if e then pure a else readFile a
   (_,[],_)       -> die "missing file/expression"
